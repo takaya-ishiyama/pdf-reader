@@ -1,9 +1,0 @@
-services:
-  db:
-    build:
-      context: ./docker/sqlite
-      dockerfile: Dockerfile
-    volumes:
-      - ./docker/sqlite:/data
-    stdin_open: true
-    tty: true
