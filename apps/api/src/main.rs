@@ -6,6 +6,8 @@ struct HealthResponse {
     status: &'static str,
 }
 
+mod domain;
+
 #[tokio::main]
 async fn main() {
     // build our application with a single route

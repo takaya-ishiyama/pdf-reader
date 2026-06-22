@@ -3,10 +3,6 @@ name = "api"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "api"
-path = "src/presentation/http/main.rs"
-
 [dependencies]
 axum = "0.8.9"
 serde = { version = "1.0.228", features = ["derive"] }
