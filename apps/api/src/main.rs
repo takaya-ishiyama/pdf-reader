@@ -7,6 +7,7 @@ struct HealthResponse {
 }
 
 mod domain;
+mod presentation;
 
 #[tokio::main]
 async fn main() {
