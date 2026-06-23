@@ -1,0 +1,2 @@
+[task.deploy]
+run = "gcloud run deploy \"pdf-reader\" --image \"pdf-reader-api\" --region \"asia-northeast1\" --platform managed"
