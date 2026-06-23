@@ -1,34 +1,38 @@
-use axum::{Json, Router, routing::get};
-use serde_json::{Value, json};
-use tower_http::trace::TraceLayer;
-use tracing_subscriber::{EnvFilter, fmt};
+use axum::{Json, Router, response::IntoResponse, routing::get};
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+}
+
+mod domain;
+mod presentation;
 
 #[tokio::main]
 async fn main() {
-    fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
-        )
-        .init();
+    // build our application with a single route
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/health", get(health))
-        .layer(TraceLayer::new_for_http());
+        .route("/health", get(health));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000")
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8000".to_string());
+    let addr = format!("0.0.0.0:{port}");
+
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("failed to bind 0.0.0.0:8000");
+        .unwrap_or_else(|err| panic!("failed to bind to {addr}: {err}"));
 
-    tracing::info!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.expect("server error");
+    println!("listening on {addr}");
+
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn root() -> &'static str {
     "Hello, Axum!"
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
+async fn health() -> impl IntoResponse {
+    Json(HealthResponse { status: "ok" })
 }

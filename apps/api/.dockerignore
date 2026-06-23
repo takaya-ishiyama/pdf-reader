@@ -1,0 +1,6 @@
+target
+.git
+.agents
+.codex
+Dockerfile
+.dockerignore
