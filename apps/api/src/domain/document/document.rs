@@ -20,12 +20,13 @@ pub enum DocumentError {
 
 impl Document {
     pub(crate) fn new(
-        id: DocumentId,
+        id: Option<DocumentId>,
         title: String,
         latest_read_line: i32,
         version: i16,
         document_url: String,
     ) -> Self {
+        let id = id.unwrap_or_else(|| DocumentId(uuid::Uuid::now_v7()));
         Self {
             id,
             title,
