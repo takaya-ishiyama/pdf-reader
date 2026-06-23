@@ -9,7 +9,7 @@ RUN cargo build --locked --release
 
 FROM debian:bookworm-slim AS runtime
 
-ENV PORT=8000
+ENV PORT=8080
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
