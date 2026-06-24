@@ -8,6 +8,7 @@ struct HealthResponse {
     status: &'static str,
 }
 
+mod application;
 mod di;
 mod domain;
 mod infrastructure;
