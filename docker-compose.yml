@@ -1,6 +1,6 @@
 services:
-  db:
-    container_name: postgres
+  pdf-reader-db:
+    container_name: pdf-reader-postgres
     build:
       context: ./postgres
       dockerfile: Dockerfile
