@@ -1,5 +1,21 @@
 .env
 .env.*
+
+# IDE / local machine state
+.idea/
+*.iml
+local.properties
+
+# Gradle / Kotlin generated state
 .gradle/
 .gradle-home/
+.kotlin/
+
+# Android build outputs
 apps/android/app/build/
+captures/
+
+# Local signing / crash artifacts
+*.jks
+*.keystore
+*.hprof
