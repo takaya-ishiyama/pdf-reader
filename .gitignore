@@ -1,2 +1,5 @@
 .env
 .env.*
+.gradle/
+.gradle-home/
+apps/android/app/build/
