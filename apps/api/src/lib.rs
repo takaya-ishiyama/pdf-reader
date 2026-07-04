@@ -16,7 +16,6 @@ struct HealthResponse {
 pub fn build_router(app_state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
-        .route("/health", get(health))
         .route("/healthz", get(health))
         .merge(presentation::http::document_routes())
         .with_state(app_state)
