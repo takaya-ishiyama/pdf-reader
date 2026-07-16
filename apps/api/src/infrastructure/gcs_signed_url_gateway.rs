@@ -1,7 +1,4 @@
-use std::{
-    env,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
 use ring::{rand::SystemRandom, signature};
@@ -25,10 +22,17 @@ pub struct ConfiguredSignedUrlGateway {
     fixed_signature: Option<String>,
 }
 
+// Deliberately not `Debug`: this contains the private signing key.
+#[derive(Clone)]
+pub struct SignedUrlConfig {
+    pub bucket: String,
+    pub ttl_seconds: u64,
+    pub service_account_email: String,
+    pub private_key_pem: String,
+}
+
 #[derive(Debug, Error)]
 pub enum SignedUrlError {
-    #[error("missing environment variable: {0}")]
-    MissingEnv(&'static str),
     #[error("invalid private key pem")]
     InvalidPrivateKey,
     #[error("failed to sign canonical request")]
@@ -36,17 +40,14 @@ pub enum SignedUrlError {
 }
 
 impl ConfiguredSignedUrlGateway {
-    pub fn from_env() -> Result<Self, SignedUrlError> {
-        Ok(Self {
-            bucket: required_env("GCS_BUCKET")?,
-            ttl_seconds: env::var("SIGNED_URL_TTL_SECONDS")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(3600),
-            service_account_email: required_env("GOOGLE_SERVICE_ACCOUNT_EMAIL")?,
-            private_key_pem: required_env("GOOGLE_PRIVATE_KEY")?.replace("\\n", "\n"),
+    pub fn from_config(config: SignedUrlConfig) -> Self {
+        Self {
+            bucket: config.bucket,
+            ttl_seconds: config.ttl_seconds,
+            service_account_email: config.service_account_email,
+            private_key_pem: config.private_key_pem,
             fixed_signature: None,
-        })
+        }
     }
 
     pub fn new(
@@ -151,10 +152,6 @@ impl SignedUrlGateway for ConfiguredSignedUrlGateway {
     ) -> TransactionFuture<'a, Result<SignedUrl, Self::Error>> {
         Box::pin(async move { self.generate_read_url_at(object_name, SystemTime::now()) })
     }
-}
-
-fn required_env(key: &'static str) -> Result<String, SignedUrlError> {
-    env::var(key).map_err(|_| SignedUrlError::MissingEnv(key))
 }
 
 fn parse_pkcs8_pem(value: &str) -> Result<Vec<u8>, SignedUrlError> {
