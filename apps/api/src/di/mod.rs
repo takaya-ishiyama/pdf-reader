@@ -5,9 +5,8 @@ use crate::{
         GetDocumentUseCase, ListDocumentsUseCase, UpdateReadingProgressUseCase,
     },
     infrastructure::{
-        database::DbPool,
-        document_repository::SqlxDocumentRepository,
-        gcs_signed_url_gateway::{ConfiguredSignedUrlGateway, SignedUrlError},
+        database::DbPool, document_repository::SqlxDocumentRepository,
+        gcs_signed_url_gateway::ConfiguredSignedUrlGateway,
     },
 };
 
@@ -41,10 +40,9 @@ pub struct UseCases {
 }
 
 impl AppState {
-    pub fn new(db_pool: DbPool) -> Result<Self, SignedUrlError> {
+    pub fn new(db_pool: DbPool, signed_url_gateway: ConfiguredSignedUrlGateway) -> Self {
         let document_repository = Arc::new(SqlxDocumentRepository::new(db_pool));
-        let signed_url_gateway = Arc::new(ConfiguredSignedUrlGateway::from_env()?);
-        Ok(Self::from_parts(document_repository, signed_url_gateway))
+        Self::from_parts(document_repository, Arc::new(signed_url_gateway))
     }
 
     pub fn new_with_signed_url_gateway(
