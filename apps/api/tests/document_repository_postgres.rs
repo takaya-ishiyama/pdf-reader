@@ -6,6 +6,9 @@ use api::{
     },
     infrastructure::document_repository::SqlxDocumentRepository,
 };
+use tokio::sync::OnceCell;
+
+static SCHEMA_INITIALIZED: OnceCell<()> = OnceCell::const_new();
 
 #[tokio::test]
 async fn sqlx_document_repository_uses_pdf_reader_schema_and_upserts_progress() {
@@ -270,11 +273,15 @@ async fn insert_document_fixture(pool: &sqlx::PgPool, title: &str) -> uuid::Uuid
 }
 
 async fn apply_schema(pool: &sqlx::PgPool) {
-    for statement in include_str!("../db/schema.sql").split(';') {
-        let statement = statement.trim();
-        if statement.is_empty() {
-            continue;
-        }
-        sqlx::query(statement).execute(pool).await.unwrap();
-    }
+    SCHEMA_INITIALIZED
+        .get_or_init(|| async {
+            for statement in include_str!("../db/schema.sql").split(';') {
+                let statement = statement.trim();
+                if statement.is_empty() {
+                    continue;
+                }
+                sqlx::query(statement).execute(pool).await.unwrap();
+            }
+        })
+        .await;
 }
