@@ -1,48 +1,27 @@
-use axum::{Json, Router, response::IntoResponse, routing::get};
-use di::AppState;
-use infrastructure::database::DatabaseConfig;
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-}
-
-mod application;
-mod di;
-mod domain;
-mod infrastructure;
-mod presentation;
+use api::{
+    build_router,
+    config::AppConfig,
+    di::AppState,
+    infrastructure::{self, gcs_signed_url_gateway::ConfiguredSignedUrlGateway},
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let database_config = DatabaseConfig::from_env()?;
-    let db_pool = infrastructure::database::connect(&database_config).await?;
-    let app_state = AppState::new(db_pool);
+    let config = AppConfig::from_env()?;
+    let db_pool = infrastructure::database::connect(&config.database).await?;
+    let signed_url_gateway = ConfiguredSignedUrlGateway::from_config(config.signed_url);
+    let app_state = AppState::new(db_pool, signed_url_gateway);
+    let app = build_router(app_state);
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/health", get(health))
-        .with_state(app_state);
-
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr = format!("0.0.0.0:{port}");
+    let addr = (config.server.host, config.server.port);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .unwrap_or_else(|err| panic!("failed to bind to {addr}: {err}"));
+        .unwrap_or_else(|err| panic!("failed to bind to {addr:?}: {err}"));
 
-    println!("listening on {addr}");
+    println!("listening on {}:{}", addr.0, addr.1);
 
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-async fn root() -> &'static str {
-    "Hello, Axum!"
-}
-
-async fn health() -> impl IntoResponse {
-    Json(HealthResponse { status: "ok" })
 }

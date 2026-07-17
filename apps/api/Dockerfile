@@ -21,6 +21,6 @@ RUN apt-get update \
 COPY --from=builder /app/target/release/api /usr/local/bin/api
 
 USER appuser
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["api"]
