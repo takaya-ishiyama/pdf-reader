@@ -99,11 +99,8 @@ expected to come from the shell environment, for example via direnv:
 PROJECT_ID=pdf-reader-500112
 REGION=asia-northeast1
 IMAGE_URI=asia-northeast1-docker.pkg.dev/pdf-reader-500112/pdf-reader/api:latest
+GCS_BUCKET=pdf-reader-dev-assets
 ```
-
-Runtime environment variables that do not depend on the project are stored in:
-
-- `apps/api/deploy/env.yaml`
 
 Secret expected by the deploy task:
 
