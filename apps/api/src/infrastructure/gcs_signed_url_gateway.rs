@@ -1,7 +1,12 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use base64::{Engine as _, engine::general_purpose};
-use ring::{rand::SystemRandom, signature};
+use gcp_auth::TokenProvider;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -13,56 +18,60 @@ use crate::{
     domain::document::document::GcsObjectName,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConfiguredSignedUrlGateway {
     bucket: String,
     ttl_seconds: u64,
     service_account_email: String,
-    private_key_pem: String,
-    fixed_signature: Option<String>,
+    signer: BlobSigner,
 }
 
-// Deliberately not `Debug`: this contains the private signing key.
 #[derive(Clone)]
 pub struct SignedUrlConfig {
     pub bucket: String,
     pub ttl_seconds: u64,
     pub service_account_email: String,
-    pub private_key_pem: String,
+}
+
+#[derive(Clone)]
+enum BlobSigner {
+    Iam {
+        token_provider: Arc<dyn TokenProvider>,
+        client: Client,
+    },
+    Fixed(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SignedUrlInitializationError {
+    #[error("failed to initialize Google application default credentials: {0}")]
+    Authentication(#[from] gcp_auth::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum SignedUrlError {
-    #[error("invalid private key pem")]
-    InvalidPrivateKey,
-    #[error("failed to sign canonical request")]
-    SigningFailed,
+    #[error("failed to obtain Google access token: {0}")]
+    Authentication(#[from] gcp_auth::Error),
+    #[error("IAM signBlob request failed: {0}")]
+    IamRequest(#[from] reqwest::Error),
+    #[error("IAM signBlob returned an invalid signature: {0}")]
+    InvalidSignature(#[from] base64::DecodeError),
 }
 
 impl ConfiguredSignedUrlGateway {
-    pub fn from_config(config: SignedUrlConfig) -> Self {
-        Self {
+    pub async fn from_config(
+        config: SignedUrlConfig,
+    ) -> Result<Self, SignedUrlInitializationError> {
+        let token_provider = gcp_auth::provider().await?;
+        Ok(Self {
             bucket: config.bucket,
             ttl_seconds: config.ttl_seconds,
             service_account_email: config.service_account_email,
-            private_key_pem: config.private_key_pem,
-            fixed_signature: None,
-        }
-    }
-
-    pub fn new(
-        bucket: String,
-        ttl_seconds: u64,
-        service_account_email: String,
-        private_key_pem: String,
-    ) -> Self {
-        Self {
-            bucket,
-            ttl_seconds,
-            service_account_email,
-            private_key_pem,
-            fixed_signature: None,
-        }
+            signer: BlobSigner::Iam {
+                token_provider,
+                client: Client::new(),
+            },
+        })
     }
 
     pub fn new_with_fixed_signature(
@@ -75,12 +84,11 @@ impl ConfiguredSignedUrlGateway {
             bucket,
             ttl_seconds,
             service_account_email,
-            private_key_pem: String::new(),
-            fixed_signature: Some(signature),
+            signer: BlobSigner::Fixed(signature),
         }
     }
 
-    fn generate_read_url_at(
+    async fn generate_read_url_at(
         &self,
         object_name: &GcsObjectName,
         now: SystemTime,
@@ -93,7 +101,7 @@ impl ConfiguredSignedUrlGateway {
         let signed_headers = "host";
         let host = "storage.googleapis.com";
 
-        let mut query = vec![
+        let mut query = [
             ("X-Goog-Algorithm", "GOOG4-RSA-SHA256".to_string()),
             ("X-Goog-Credential", credential),
             ("X-Goog-Date", timestamp.full.clone()),
@@ -114,7 +122,7 @@ impl ConfiguredSignedUrlGateway {
             "GOOG4-RSA-SHA256\n{}\n{}\n{}",
             timestamp.full, credential_scope, canonical_request_hash
         );
-        let signature = self.sign(string_to_sign.as_bytes())?;
+        let signature = self.sign(string_to_sign.as_bytes()).await?;
         let signed_query = format!("{canonical_query}&X-Goog-Signature={signature}");
         let expires_at = timestamp
             .plus_seconds(self.ttl_seconds)
@@ -126,21 +134,47 @@ impl ConfiguredSignedUrlGateway {
         })
     }
 
-    fn sign(&self, message: &[u8]) -> Result<String, SignedUrlError> {
-        if let Some(signature) = &self.fixed_signature {
-            return Ok(signature.clone());
-        }
+    async fn sign(&self, message: &[u8]) -> Result<String, SignedUrlError> {
+        let (token_provider, client) = match &self.signer {
+            BlobSigner::Iam {
+                token_provider,
+                client,
+            } => (token_provider, client),
+            BlobSigner::Fixed(signature) => return Ok(signature.clone()),
+        };
 
-        let der = parse_pkcs8_pem(&self.private_key_pem)?;
-        let key_pair = signature::RsaKeyPair::from_pkcs8(&der)
-            .map_err(|_| SignedUrlError::InvalidPrivateKey)?;
-        let rng = SystemRandom::new();
-        let mut signature = vec![0; key_pair.public().modulus_len()];
-        key_pair
-            .sign(&signature::RSA_PKCS1_SHA256, &rng, message, &mut signature)
-            .map_err(|_| SignedUrlError::SigningFailed)?;
+        const SCOPES: &[&str] = &["https://www.googleapis.com/auth/cloud-platform"];
+        let token = token_provider.token(SCOPES).await?;
+        let endpoint = format!(
+            "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{}:signBlob",
+            self.service_account_email
+        );
+        let response = client
+            .post(endpoint)
+            .bearer_auth(token.as_str())
+            .json(&SignBlobRequest {
+                payload: general_purpose::STANDARD.encode(message),
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<SignBlobResponse>()
+            .await?;
+        let signature = general_purpose::STANDARD.decode(response.signed_blob)?;
+
         Ok(hex::encode(signature))
     }
+}
+
+#[derive(Serialize)]
+struct SignBlobRequest {
+    payload: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignBlobResponse {
+    signed_blob: String,
 }
 
 impl SignedUrlGateway for ConfiguredSignedUrlGateway {
@@ -150,18 +184,11 @@ impl SignedUrlGateway for ConfiguredSignedUrlGateway {
         &'a self,
         object_name: &'a GcsObjectName,
     ) -> TransactionFuture<'a, Result<SignedUrl, Self::Error>> {
-        Box::pin(async move { self.generate_read_url_at(object_name, SystemTime::now()) })
+        Box::pin(async move {
+            self.generate_read_url_at(object_name, SystemTime::now())
+                .await
+        })
     }
-}
-
-fn parse_pkcs8_pem(value: &str) -> Result<Vec<u8>, SignedUrlError> {
-    let body = value
-        .lines()
-        .filter(|line| !line.starts_with("-----"))
-        .collect::<String>();
-    general_purpose::STANDARD
-        .decode(body)
-        .map_err(|_| SignedUrlError::InvalidPrivateKey)
 }
 
 fn canonical_uri(bucket: &str, object_name: &GcsObjectName) -> String {
@@ -289,12 +316,5 @@ mod tests {
             canonical_uri("markdown bucket", &object_name),
             "/markdown%20bucket/documents/sample%20file/v1/content.md"
         );
-    }
-
-    #[test]
-    fn parses_pkcs8_pem_body() {
-        let pem = "-----BEGIN PRIVATE KEY-----\nAQIDBA==\n-----END PRIVATE KEY-----";
-
-        assert_eq!(parse_pkcs8_pem(pem).unwrap(), vec![1, 2, 3, 4]);
     }
 }

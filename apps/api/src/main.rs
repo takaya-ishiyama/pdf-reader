@@ -9,7 +9,7 @@ use api::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     let db_pool = infrastructure::database::connect(&config.database).await?;
-    let signed_url_gateway = ConfiguredSignedUrlGateway::from_config(config.signed_url);
+    let signed_url_gateway = ConfiguredSignedUrlGateway::from_config(config.signed_url).await?;
     let app_state = AppState::new(db_pool, signed_url_gateway);
     let app = build_router(app_state);
 
