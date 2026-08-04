@@ -87,7 +87,8 @@ impl AppConfig {
                     "SIGNED_URL_TTL_SECONDS",
                     DEFAULT_SIGNED_URL_TTL_SECONDS,
                 )?,
-                service_account_email: required(&get, "GOOGLE_SERVICE_ACCOUNT_EMAIL")?,
+                service_account_email: get("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+                    .filter(|value| !value.is_empty()),
             },
         })
     }
@@ -168,9 +169,19 @@ mod tests {
         assert_eq!(config.database.acquire_timeout, Duration::from_secs(5));
         assert_eq!(config.signed_url.ttl_seconds, 3600);
         assert_eq!(
-            config.signed_url.service_account_email,
-            "signer@example.com"
+            config.signed_url.service_account_email.as_deref(),
+            Some("signer@example.com")
         );
+    }
+
+    #[test]
+    fn allows_service_account_email_to_be_resolved_by_runtime() {
+        let mut values = required_values();
+        values.remove("GOOGLE_SERVICE_ACCOUNT_EMAIL");
+
+        let config = AppConfig::from_source(|key| values.get(key).cloned()).unwrap();
+
+        assert_eq!(config.signed_url.service_account_email, None);
     }
 
     #[test]

@@ -30,7 +30,7 @@ pub struct ConfiguredSignedUrlGateway {
 pub struct SignedUrlConfig {
     pub bucket: String,
     pub ttl_seconds: u64,
-    pub service_account_email: String,
+    pub service_account_email: Option<String>,
 }
 
 #[derive(Clone)]
@@ -46,6 +46,8 @@ enum BlobSigner {
 pub enum SignedUrlInitializationError {
     #[error("failed to initialize Google application default credentials: {0}")]
     Authentication(#[from] gcp_auth::Error),
+    #[error("failed to resolve Google service account email from metadata server: {0}")]
+    Metadata(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Error)]
@@ -63,10 +65,14 @@ impl ConfiguredSignedUrlGateway {
         config: SignedUrlConfig,
     ) -> Result<Self, SignedUrlInitializationError> {
         let token_provider = gcp_auth::provider().await?;
+        let service_account_email = match config.service_account_email {
+            Some(email) => email,
+            None => metadata_service_account_email().await?,
+        };
         Ok(Self {
             bucket: config.bucket,
             ttl_seconds: config.ttl_seconds,
-            service_account_email: config.service_account_email,
+            service_account_email,
             signer: BlobSigner::Iam {
                 token_provider,
                 client: Client::new(),
@@ -164,6 +170,17 @@ impl ConfiguredSignedUrlGateway {
 
         Ok(hex::encode(signature))
     }
+}
+
+async fn metadata_service_account_email() -> Result<String, reqwest::Error> {
+    Client::new()
+        .get("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email")
+        .header("Metadata-Flavor", "Google")
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
 }
 
 #[derive(Serialize)]

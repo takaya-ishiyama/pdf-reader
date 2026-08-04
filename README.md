@@ -19,6 +19,10 @@ GOOGLE_SERVICE_ACCOUNT_EMAIL=cloud-run-signer@PROJECT_ID.iam.gserviceaccount.com
 SIGNED_URL_TTL_SECONDS=3600
 ```
 
+`GOOGLE_SERVICE_ACCOUNT_EMAIL` is required for local signing. On Cloud Run, the
+API resolves the runtime service account email from the metadata server when
+the variable is not set.
+
 `DATABASE_URL_FILE` may be used instead of `DATABASE_URL`. Set exactly one of
 the two. The file form is intended for production secret mounts:
 
@@ -88,33 +92,40 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/pdf_reader_test ca
 
 ## Cloud Run
 
-A service template is available at:
+The API deploy task uses `gcloud run deploy`. Project-specific values are
+expected to come from the shell environment, for example via direnv:
 
-- `apps/api/deploy/cloud-run-service.yaml`
+```sh
+PROJECT_ID=pdf-reader-500112
+REGION=asia-northeast1
+IMAGE_URI=asia-northeast1-docker.pkg.dev/pdf-reader-500112/pdf-reader/api:latest
+```
 
-Before applying it, replace `PROJECT_ID`, `REGION`, image tag, bucket, service account, and secret names.
+Runtime environment variables that do not depend on the project are stored in:
 
-Secret expected by the template:
+- `apps/api/deploy/env.yaml`
 
-- `markdown-reader-database-url`
+Secret expected by the deploy task:
 
-The Cloud Run service account needs:
+- `pdf-reader-database-url`
 
-- Access to `markdown-reader-database-url` in Secret Manager
+The Cloud Run service account is `pdf-reader-api@$PROJECT_ID.iam.gserviceaccount.com`.
+It needs:
+
+- Access to `pdf-reader-database-url` in Secret Manager
 - GCS object read permission for the configured bucket
-- `iam.serviceAccounts.signBlob` on the service account named by
-  `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `iam.serviceAccounts.signBlob` on the Cloud Run service account
 
 Enable the IAM Service Account Credentials API before deployment. The Cloud Run
-template mounts the database URL as a file and uses the service identity's
+deploy task mounts the database URL as a file and uses the service identity's
 Application Default Credentials to call `signBlob`.
 
 Example GCP setup (replace the values first):
 
 ```sh
 PROJECT_ID=your-project
-BUCKET=your-markdown-bucket
-RUNTIME_SA=markdown-reader-api@$PROJECT_ID.iam.gserviceaccount.com
+BUCKET=pdf-reader-dev-assets
+RUNTIME_SA=pdf-reader-api@$PROJECT_ID.iam.gserviceaccount.com
 SIGNER_SA=$RUNTIME_SA
 
 gcloud services enable \
@@ -123,7 +134,7 @@ gcloud services enable \
   secretmanager.googleapis.com \
   --project "$PROJECT_ID"
 
-gcloud secrets add-iam-policy-binding markdown-reader-database-url \
+gcloud secrets add-iam-policy-binding pdf-reader-database-url \
   --project "$PROJECT_ID" \
   --member "serviceAccount:$RUNTIME_SA" \
   --role roles/secretmanager.secretAccessor
@@ -156,8 +167,7 @@ is required.
 
 After successfully deploying and testing IAM signing, disable and delete the
 old user-managed Google service account key, then remove the obsolete
-`markdown-reader-google-private-key` and
-`markdown-reader-google-service-account-email` secrets.
+Google private key and service account email secrets if they still exist.
 
 ## Android
 
