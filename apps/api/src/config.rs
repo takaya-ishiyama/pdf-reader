@@ -1,4 +1,4 @@
-use std::{env, net::Ipv4Addr, time::Duration};
+use std::{env, fs, net::Ipv4Addr, time::Duration};
 
 use thiserror::Error;
 
@@ -24,12 +24,23 @@ pub struct ServerConfig {
     pub port: u16,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("missing environment variable: {0}")]
     Missing(&'static str),
     #[error("environment variable {key} has invalid value {value:?}")]
     Invalid { key: &'static str, value: String },
+    #[error("set only one of {variable} and {file_variable}")]
+    ConflictingSecretSources {
+        variable: &'static str,
+        file_variable: &'static str,
+    },
+    #[error("failed to read secret file configured by {key}: {source}")]
+    SecretFile {
+        key: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("DATABASE_MIN_CONNECTIONS must not exceed DATABASE_MAX_CONNECTIONS")]
     InvalidDatabasePoolSize,
 }
@@ -60,7 +71,7 @@ impl AppConfig {
                 port: optional(&get, "PORT", DEFAULT_PORT)?,
             },
             database: DatabaseConfig {
-                url: required(&get, "DATABASE_URL")?,
+                url: required_secret(&get, "DATABASE_URL", "DATABASE_URL_FILE")?,
                 max_connections,
                 min_connections,
                 acquire_timeout: Duration::from_secs(optional(
@@ -76,10 +87,40 @@ impl AppConfig {
                     "SIGNED_URL_TTL_SECONDS",
                     DEFAULT_SIGNED_URL_TTL_SECONDS,
                 )?,
-                service_account_email: required(&get, "GOOGLE_SERVICE_ACCOUNT_EMAIL")?,
-                private_key_pem: required(&get, "GOOGLE_PRIVATE_KEY")?.replace("\\n", "\n"),
+                service_account_email: get("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+                    .filter(|value| !value.is_empty()),
             },
         })
+    }
+}
+
+fn required_secret(
+    get: &impl Fn(&str) -> Option<String>,
+    variable: &'static str,
+    file_variable: &'static str,
+) -> Result<String, ConfigError> {
+    match (get(variable), get(file_variable)) {
+        (Some(_), Some(_)) => Err(ConfigError::ConflictingSecretSources {
+            variable,
+            file_variable,
+        }),
+        (Some(value), None) => non_empty(value, variable),
+        (None, Some(path)) => {
+            let value = fs::read_to_string(&path).map_err(|source| ConfigError::SecretFile {
+                key: file_variable,
+                source,
+            })?;
+            non_empty(value.trim_end().to_owned(), file_variable)
+        }
+        (None, None) => Err(ConfigError::Missing(variable)),
+    }
+}
+
+fn non_empty(value: String, key: &'static str) -> Result<String, ConfigError> {
+    if value.is_empty() {
+        Err(ConfigError::Missing(key))
+    } else {
+        Ok(value)
     }
 }
 
@@ -115,12 +156,11 @@ mod tests {
             ("DATABASE_URL", "postgres://localhost/app".into()),
             ("GCS_BUCKET", "documents".into()),
             ("GOOGLE_SERVICE_ACCOUNT_EMAIL", "signer@example.com".into()),
-            ("GOOGLE_PRIVATE_KEY", "line-1\\nline-2".into()),
         ])
     }
 
     #[test]
-    fn loads_defaults_and_normalizes_private_key() {
+    fn loads_defaults_and_required_values() {
         let values = required_values();
         let config = AppConfig::from_source(|key| values.get(key).cloned()).unwrap();
         assert_eq!(config.server.port, 8080);
@@ -128,7 +168,20 @@ mod tests {
         assert_eq!(config.database.min_connections, 1);
         assert_eq!(config.database.acquire_timeout, Duration::from_secs(5));
         assert_eq!(config.signed_url.ttl_seconds, 3600);
-        assert_eq!(config.signed_url.private_key_pem, "line-1\nline-2");
+        assert_eq!(
+            config.signed_url.service_account_email.as_deref(),
+            Some("signer@example.com")
+        );
+    }
+
+    #[test]
+    fn allows_service_account_email_to_be_resolved_by_runtime() {
+        let mut values = required_values();
+        values.remove("GOOGLE_SERVICE_ACCOUNT_EMAIL");
+
+        let config = AppConfig::from_source(|key| values.get(key).cloned()).unwrap();
+
+        assert_eq!(config.signed_url.service_account_email, None);
     }
 
     #[test]
@@ -136,12 +189,43 @@ mod tests {
         let mut values = required_values();
         values.insert("PORT", "not-a-port".into());
         let result = AppConfig::from_source(|key| values.get(key).cloned());
-        assert_eq!(
-            result.err().expect("invalid port should fail"),
-            ConfigError::Invalid {
+        assert!(matches!(
+            result,
+            Err(ConfigError::Invalid {
                 key: "PORT",
-                value: "not-a-port".into()
-            }
-        );
+                value,
+            }) if value == "not-a-port"
+        ));
+    }
+
+    #[test]
+    fn rejects_multiple_database_secret_sources() {
+        let mut values = required_values();
+        values.insert("DATABASE_URL_FILE", "/run/secrets/database-url".into());
+
+        let result = AppConfig::from_source(|key| values.get(key).cloned());
+
+        assert!(matches!(
+            result,
+            Err(ConfigError::ConflictingSecretSources {
+                variable: "DATABASE_URL",
+                file_variable: "DATABASE_URL_FILE",
+            })
+        ));
+    }
+
+    #[test]
+    fn reads_database_url_from_file() {
+        let path =
+            std::env::temp_dir().join(format!("pdf-reader-database-url-{}", std::process::id()));
+        std::fs::write(&path, "postgres://localhost/from-file\n").unwrap();
+        let mut values = required_values();
+        values.remove("DATABASE_URL");
+        values.insert("DATABASE_URL_FILE", path.to_string_lossy().into_owned());
+
+        let config = AppConfig::from_source(|key| values.get(key).cloned()).unwrap();
+
+        assert_eq!(config.database.url, "postgres://localhost/from-file");
+        std::fs::remove_file(path).unwrap();
     }
 }

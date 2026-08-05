@@ -1,5 +1,7 @@
 .env
 .env.*
+.local-secrets/
+.secrets
 
 # IDE / local machine state
 .idea/

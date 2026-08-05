@@ -5,4 +5,14 @@ run = "gcloud config set project $PROJECT_ID && gcloud auth configure-docker asi
 run = "docker build -t $IMAGE_URI . && docker push $IMAGE_URI"
 
 [tasks.deploy]
-run = "gcloud run deploy pdf-reader-api --image \"$IMAGE_URI\" --region asia-northeast1 --project \"$PROJECT_ID\" --platform managed --allow-unauthenticated"
+run = """
+gcloud run deploy pdf-reader-api \
+  --image "$IMAGE_URI" \
+  --region "$REGION" \
+  --project "$PROJECT_ID" \
+  --platform managed \
+  --allow-unauthenticated \
+  --service-account "pdf-reader-api@$PROJECT_ID.iam.gserviceaccount.com" \
+  --set-env-vars "GCS_BUCKET=$GCS_BUCKET,SIGNED_URL_TTL_SECONDS=3600,DATABASE_MAX_CONNECTIONS=5,DATABASE_MIN_CONNECTIONS=1,DATABASE_ACQUIRE_TIMEOUT_SECS=5,DATABASE_URL_FILE=/var/run/app-secrets/database/database-url" \
+  --update-secrets "/var/run/app-secrets/database/database-url=pdf-reader-database-url:latest"
+"""

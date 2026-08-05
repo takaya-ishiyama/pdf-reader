@@ -4,3 +4,4 @@ target
 .codex
 Dockerfile
 .dockerignore
+.local-secrets
