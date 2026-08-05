@@ -16,3 +16,25 @@ gcloud run deploy pdf-reader-api \
   --set-env-vars "GCS_BUCKET=$GCS_BUCKET,SIGNED_URL_TTL_SECONDS=3600,DATABASE_MAX_CONNECTIONS=5,DATABASE_MIN_CONNECTIONS=1,DATABASE_ACQUIRE_TIMEOUT_SECS=5,DATABASE_URL_FILE=/var/run/app-secrets/database/database-url" \
   --update-secrets "/var/run/app-secrets/database/database-url=pdf-reader-database-url:latest"
 """
+
+[tasks.generate-migration]
+run = """
+atlas migrate diff add_some_change \
+  --dev-url "docker://postgres/16/dev" \
+  --to "file://db/schema.sql" \
+  --dir "file://db/migrations"
+"""
+
+[tasks.checksum-migrations]
+run = """
+atlas migrate hash --dir "file://db/migrations"
+"""
+
+[tasks.apply-migration]
+run = """
+atlas migrate apply \
+  --url "$DATABASE_URL" \
+  --dir "file://db/migrations"
+"""
+
+
