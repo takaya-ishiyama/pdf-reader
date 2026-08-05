@@ -168,7 +168,7 @@ Google private key and service account email secrets if they still exist.
 
 ## Android
 
-The Android module is under `apps/android/app`.
+The Android module is under `apps/mobile/android/app`.
 
 It includes:
 
@@ -183,10 +183,11 @@ It includes:
 Run unit tests with Gradle:
 
 ```sh
-./gradlew :android-app:testDebugUnitTest
+cd apps/mobile/android
+./gradlew :app:testDebugUnitTest
 ```
 
-The default API base URL is set in `apps/android/app/build.gradle.kts` as `http://10.0.2.2:8080` for the Android emulator.
+The default API base URL is set in `apps/mobile/android/app/build.gradle.kts` as `http://10.0.2.2:8080` for the Android emulator.
 
 ## CI
 
@@ -197,4 +198,4 @@ GitHub Actions workflow:
 It runs:
 
 - `cargo test` with a PostgreSQL service
-- `./gradlew :android-app:testDebugUnitTest`
+- `cd apps/mobile/android && ./gradlew :app:testDebugUnitTest`
