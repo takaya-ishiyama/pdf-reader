@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.BackgroundColorSpan
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -61,6 +62,7 @@ class MainActivity : AppCompatActivity() {
     private var pageIndex: Int = 0
     private lateinit var pageStatus: TextView
     private var currentHeadingAnchor: String = "top"
+    private var tappedTextOffset: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -130,6 +132,19 @@ class MainActivity : AppCompatActivity() {
             textSize = 17f
             setLineSpacing(8f, 1.05f)
             setPadding(0, dp(12), 0, dp(96))
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    tappedTextOffset = textOffsetAt(event.x, event.y)
+                }
+                false
+            }
+            setOnClickListener {
+                tappedTextOffset?.let { offset ->
+                    ttsController.playFromOffset(offset)
+                    syncSpeechProgress()
+                }
+                tappedTextOffset = null
+            }
         }
         scroll.addView(markdown)
 
@@ -386,6 +401,18 @@ class MainActivity : AppCompatActivity() {
             scroll.smoothScrollTo(0, targetY)
             syncSpeechProgress()
         }
+    }
+
+    private fun TextView.textOffsetAt(x: Float, y: Float): Int? {
+        val textLayout = layout ?: return null
+        if (text.isEmpty()) return null
+        val contentY = (y - totalPaddingTop + scrollY)
+            .toInt()
+            .coerceIn(0, (textLayout.height - 1).coerceAtLeast(0))
+        val line = textLayout.getLineForVertical(contentY)
+        val contentX = x - totalPaddingLeft + scrollX
+        return textLayout.getOffsetForHorizontal(line, contentX)
+            .coerceIn(0, text.length - 1)
     }
 
     private fun headingAnchorNearOffset(markdown: String, ratio: Double): String? {

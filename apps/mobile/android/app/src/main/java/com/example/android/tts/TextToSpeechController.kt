@@ -79,6 +79,14 @@ class TextToSpeechController(
         }
     }
 
+    fun playFromOffset(offset: Int) {
+        if (sentences.isEmpty()) return
+        index = sentences.indexOfFirst { offset <= it.range.last }
+            .takeIf { it >= 0 }
+            ?: sentences.lastIndex
+        play()
+    }
+
     fun setSpeechRate(rate: Float) {
         speechRate = rate.coerceIn(0.5f, 2.0f)
         engine.setSpeechRate(speechRate)

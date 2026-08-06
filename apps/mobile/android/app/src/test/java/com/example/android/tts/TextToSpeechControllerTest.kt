@@ -68,6 +68,32 @@ class TextToSpeechControllerTest {
         assertEquals(SpeechState.Playing(2), controller.state)
         assertEquals(0.5, controller.currentProgressRatio(), 0.001)
     }
+
+    @Test
+    fun playFromOffsetStartsAtSentenceContainingTappedCharacter() {
+        val engine = FakeSpeechEngine()
+        val controller = TextToSpeechController(engine)
+        controller.setMarkdown("First sentence. Second sentence. Third sentence.")
+
+        controller.play()
+        controller.playFromOffset(20)
+
+        assertEquals("Second sentence.", engine.spoken.last())
+        assertEquals(SpeechState.Playing(1), controller.state)
+        assertEquals(1.0 / 3.0, controller.currentProgressRatio(), 0.001)
+    }
+
+    @Test
+    fun playFromOffsetInWhitespaceStartsAtFollowingSentence() {
+        val engine = FakeSpeechEngine()
+        val controller = TextToSpeechController(engine)
+        controller.setMarkdown("First sentence.\n\nSecond sentence.")
+
+        controller.playFromOffset(16)
+
+        assertEquals("Second sentence.", engine.spoken.last())
+        assertEquals(SpeechState.Playing(1), controller.state)
+    }
 }
 
 private class FakeSpeechEngine : SpeechEngine {
