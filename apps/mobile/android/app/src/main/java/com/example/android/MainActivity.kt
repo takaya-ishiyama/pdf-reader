@@ -127,8 +127,11 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(markdown)
 
         val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+        }
+        val playbackControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
         }
         val back = Button(this).apply {
             text = "List"
@@ -162,12 +165,29 @@ class MainActivity : AppCompatActivity() {
                 override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
             })
         }
-        controls.addView(back)
-        controls.addView(previous)
-        controls.addView(play)
-        controls.addView(stop)
-        controls.addView(next)
-        controls.addView(rate, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val playbackButtonParams = LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            1f,
+        )
+        listOf(back, previous, play, stop, next).forEach { button ->
+            button.minWidth = 0
+            playbackControls.addView(button, LinearLayout.LayoutParams(playbackButtonParams))
+        }
+        controls.addView(
+            playbackControls,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        controls.addView(
+            rate,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
 
         val pageNavigation = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
