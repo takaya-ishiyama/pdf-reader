@@ -292,21 +292,25 @@ class MainActivity : AppCompatActivity() {
         root.findViewWithTag<LinearLayout>("controls").visibility = View.VISIBLE
         status.text = document.detail.title + if (document.fromCache) " (cached)" else ""
         val ratio = document.detail.readingProgress?.progressRatio ?: 0.0
-        showPage(pageIndex, syncProgress = false)
+        val pageProgress = (ratio * pager!!.pageCount - pageIndex).coerceIn(0.0, 1.0)
+        showPage(pageIndex, syncProgress = false, initialSpeechProgress = pageProgress)
         scroll.post {
             val maxScroll = max(0, markdown.height - scroll.height)
-            val pageProgress = (ratio * pager!!.pageCount - pageIndex).coerceIn(0.0, 1.0)
             scroll.scrollTo(0, (maxScroll * pageProgress).toInt())
         }
     }
 
-    private fun showPage(requestedIndex: Int, syncProgress: Boolean = true) {
+    private fun showPage(
+        requestedIndex: Int,
+        syncProgress: Boolean = true,
+        initialSpeechProgress: Double = 0.0,
+    ) {
         val currentPager = pager ?: return
         pageIndex = requestedIndex.coerceIn(0, currentPager.pageCount - 1)
         val page = currentPager.page(pageIndex)
         markdown.text = page
         pageStatus.text = "${pageIndex + 1} / ${currentPager.pageCount}"
-        ttsController.setMarkdown(page)
+        ttsController.setMarkdown(page, initialSpeechProgress)
         scroll.scrollTo(0, 0)
         if (syncProgress) syncScrollProgress()
     }

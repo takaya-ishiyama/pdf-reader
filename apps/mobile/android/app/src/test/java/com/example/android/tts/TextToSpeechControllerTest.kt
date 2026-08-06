@@ -55,6 +55,19 @@ class TextToSpeechControllerTest {
         assertEquals(16..31, highlights.last())
         assertEquals(SpeechState.Playing(1), controller.state)
     }
+
+    @Test
+    fun playResumesFromSentenceMatchingSavedProgress() {
+        val engine = FakeSpeechEngine()
+        val controller = TextToSpeechController(engine)
+
+        controller.setMarkdown("One. Two. Three. Four.", initialProgressRatio = 0.5)
+        controller.play()
+
+        assertEquals("Three.", engine.spoken.last())
+        assertEquals(SpeechState.Playing(2), controller.state)
+        assertEquals(0.5, controller.currentProgressRatio(), 0.001)
+    }
 }
 
 private class FakeSpeechEngine : SpeechEngine {

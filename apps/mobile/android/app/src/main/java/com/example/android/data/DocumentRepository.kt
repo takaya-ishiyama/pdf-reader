@@ -42,9 +42,11 @@ class DocumentRepository(
 
     suspend fun updateProgress(update: ProgressUpdate): Boolean {
         return try {
-            apiClient.updateProgress(clientIdProvider.getOrCreateClientId(), update)
+            val result = apiClient.updateProgress(clientIdProvider.getOrCreateClientId(), update)
+            cacheProgress(update, result.updatedAt)
             true
         } catch (_: Exception) {
+            cacheProgress(update, updatedAt = null)
             metadataStore.enqueueProgress(update)
             false
         }
@@ -68,4 +70,33 @@ class DocumentRepository(
 
     fun cacheKey(detail: DocumentDetail): String =
         markdownCache.key(detail.documentId, detail.version, detail.contentHash)
+
+    private fun cacheProgress(update: ProgressUpdate, updatedAt: java.time.Instant?) {
+        metadataStore.loadDetail(update.documentId)
+            ?.takeIf { it.version == update.version }
+            ?.let { detail ->
+                metadataStore.saveDetail(
+                    detail.copy(
+                        readingProgress = ReadingProgress(
+                            positionType = update.positionType,
+                            positionValue = update.positionValue,
+                            progressRatio = update.progressRatio,
+                            updatedAt = updatedAt,
+                        ),
+                    ),
+                )
+            }
+        val documents = metadataStore.loadDocuments()
+        if (documents.any { it.documentId == update.documentId && it.version == update.version }) {
+            metadataStore.saveDocuments(
+                documents.map { document ->
+                    if (document.documentId == update.documentId && document.version == update.version) {
+                        document.copy(progressRatio = update.progressRatio, updatedAt = updatedAt)
+                    } else {
+                        document
+                    }
+                },
+            )
+        }
+    }
 }

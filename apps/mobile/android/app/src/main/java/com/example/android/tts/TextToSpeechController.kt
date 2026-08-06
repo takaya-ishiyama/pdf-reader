@@ -13,7 +13,7 @@ class TextToSpeechController(
     private var index: Int = 0
     private var playbackGeneration: Int = 0
 
-    fun setMarkdown(markdown: String) {
+    fun setMarkdown(markdown: String, initialProgressRatio: Double = 0.0) {
         playbackGeneration += 1
         engine.stop()
         sentences = sentencePattern.findAll(markdown)
@@ -29,7 +29,13 @@ class TextToSpeechController(
                 }
             }
             .toList()
-        index = 0
+        index = if (sentences.isEmpty()) {
+            0
+        } else {
+            (initialProgressRatio.coerceIn(0.0, 1.0) * sentences.size)
+                .toInt()
+                .coerceIn(0, sentences.lastIndex)
+        }
         state = SpeechState.Idle
         onHighlightChanged?.invoke(null)
     }

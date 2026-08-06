@@ -50,6 +50,7 @@ class DocumentRepositoryTest {
     @Test
     fun updateProgressQueuesOfflineEventWhenApiFails() = runTest {
         val store = InMemoryMetadataStore()
+        store.saveDetail(detail())
         val repository = repository(api = FakeApiClient(fail = true), store = store)
         val update = progress()
 
@@ -57,6 +58,7 @@ class DocumentRepositoryTest {
 
         assertFalse(sent)
         assertEquals(listOf(update), store.loadProgressQueue())
+        assertEquals(0.25, store.loadDetail("doc-1")?.readingProgress?.progressRatio ?: -1.0, 0.001)
     }
 
     @Test
