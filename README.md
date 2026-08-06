@@ -90,6 +90,27 @@ cd apps/api
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/pdf_reader_test cargo test
 ```
 
+### Registering a document
+
+After uploading Markdown to GCS, register its list metadata and first version in
+PostgreSQL with the management script. The GCS object argument is the path
+inside the configured bucket, not a `gs://` URL.
+
+```sh
+cd apps/api
+
+cargo run --bin register_document -- \
+  --database-url-file .local-secrets/database-url \
+  --title '利用ガイド' \
+  --gcs-object-name 'documents/guide/v1/content.md' \
+  --markdown-file guide.md
+```
+
+Run `cargo run --bin register_document -- --help` for optional UUID and version
+arguments. The command calculates `content_hash` from the Markdown file using
+SHA-256 and only registers database records; uploading to GCS remains a separate
+operation. Specify the same local file that was uploaded to GCS.
+
 ## Cloud Run
 
 The API deploy task uses `gcloud run deploy`. Project-specific values are
@@ -168,7 +189,7 @@ Google private key and service account email secrets if they still exist.
 
 ## Android
 
-The Android module is under `apps/android/app`.
+The Android module is under `apps/mobile/android/app`.
 
 It includes:
 
@@ -183,10 +204,11 @@ It includes:
 Run unit tests with Gradle:
 
 ```sh
-./gradlew :android-app:testDebugUnitTest
+cd apps/mobile/android
+./gradlew :app:testDebugUnitTest
 ```
 
-The default API base URL is set in `apps/android/app/build.gradle.kts` as `http://10.0.2.2:8080` for the Android emulator.
+The default API base URL is set in `apps/mobile/android/app/build.gradle.kts` as `http://10.0.2.2:8080` for the Android emulator.
 
 ## CI
 
@@ -197,4 +219,4 @@ GitHub Actions workflow:
 It runs:
 
 - `cargo test` with a PostgreSQL service
-- `./gradlew :android-app:testDebugUnitTest`
+- `cd apps/mobile/android && ./gradlew :app:testDebugUnitTest`
