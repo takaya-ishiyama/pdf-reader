@@ -37,4 +37,11 @@ atlas migrate apply \
   --dir "file://db/migrations"
 """
 
-
+[tasks.seed-new-document-data]
+run = """
+cargo run --bin register_document -- \
+  --database-url-file .local-secrets/database-url \
+  --title '利用ガイド' \
+  --gcs-object-name 'documents/guide/v1/content.md' \
+  --content-hash "sha256:$(sha256sum guide.md | cut -d ' ' -f 1)"
+"""

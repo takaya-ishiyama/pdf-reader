@@ -90,6 +90,27 @@ cd apps/api
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/pdf_reader_test cargo test
 ```
 
+### Registering a document
+
+After uploading Markdown to GCS, register its list metadata and first version in
+PostgreSQL with the management script. The GCS object argument is the path
+inside the configured bucket, not a `gs://` URL.
+
+```sh
+cd apps/api
+
+cargo run --bin register_document -- \
+  --database-url-file .local-secrets/database-url \
+  --title '利用ガイド' \
+  --gcs-object-name 'documents/guide/v1/content.md' \
+  --markdown-file guide.md
+```
+
+Run `cargo run --bin register_document -- --help` for optional UUID and version
+arguments. The command calculates `content_hash` from the Markdown file using
+SHA-256 and only registers database records; uploading to GCS remains a separate
+operation. Specify the same local file that was uploaded to GCS.
+
 ## Cloud Run
 
 The API deploy task uses `gcloud run deploy`. Project-specific values are
