@@ -68,7 +68,7 @@ class HttpApiClient(private val baseUrl: String) : ApiClient {
         title = json.getString("title"),
         version = json.getInt("version"),
         progressRatio = json.optDouble("progress_ratio", 0.0),
-        updatedAt = json.optString("updated_at").takeIf { it.isNotBlank() }?.let(Instant::parse),
+        updatedAt = json.optInstant("updated_at"),
     )
 
     private fun parseDetail(json: JSONObject): DocumentDetail {
@@ -77,7 +77,7 @@ class HttpApiClient(private val baseUrl: String) : ApiClient {
                 positionType = PositionType.fromWireValue(it.getString("position_type")),
                 positionValue = it.getString("position_value"),
                 progressRatio = it.getDouble("progress_ratio"),
-                updatedAt = it.optString("updated_at").takeIf { value -> value.isNotBlank() }?.let(Instant::parse),
+                updatedAt = it.optInstant("updated_at"),
             )
         }
         val cacheControl = json.getJSONObject("cache_control")
@@ -98,6 +98,9 @@ class HttpApiClient(private val baseUrl: String) : ApiClient {
 
     private fun JSONArray.mapObjects(transform: (JSONObject) -> DocumentSummary): List<DocumentSummary> =
         List(length()) { index -> transform(getJSONObject(index)) }
+
+    private fun JSONObject.optInstant(name: String): Instant? =
+        if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)?.let(Instant::parse)
 
     private fun String.urlEncode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.name())
 }
