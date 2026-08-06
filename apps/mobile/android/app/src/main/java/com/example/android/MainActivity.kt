@@ -1,6 +1,7 @@
 package com.example.android
 
 import android.os.Bundle
+import android.graphics.Typeface
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -9,7 +10,11 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
+import androidx.core.view.updatePadding
 import com.example.android.data.DocumentRepository
 import com.example.android.data.FileMarkdownCache
 import com.example.android.data.HttpApiClient
@@ -51,6 +56,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.enableEdgeToEdge(window)
         repository = createRepository()
         viewModel = DocumentReaderViewModel(repository, scope)
         syncManager = ProgressSyncManager(repository, scope)
@@ -87,6 +93,23 @@ class MainActivity : AppCompatActivity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val contentPadding = dp(16)
+            view.updatePadding(
+                left = contentPadding + systemBars.left,
+                top = contentPadding + systemBars.top,
+                right = contentPadding + systemBars.right,
+                bottom = contentPadding + systemBars.bottom,
+            )
+            insets
+        }
+        val title = TextView(this).apply {
+            text = getString(R.string.app_name)
+            textSize = 22f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(12))
         }
         loading = ProgressBar(this).apply { visibility = View.GONE }
         status = TextView(this).apply { textSize = 14f }
@@ -142,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         controls.addView(next)
         controls.addView(rate, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
+        root.addView(title)
         root.addView(loading)
         root.addView(status)
         root.addView(list)
