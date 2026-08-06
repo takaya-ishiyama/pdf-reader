@@ -29,6 +29,7 @@ import com.example.android.sync.ProgressSyncManager
 import com.example.android.tts.AndroidSpeechEngine
 import com.example.android.tts.TextToSpeechController
 import com.example.android.ui.DocumentReaderViewModel
+import com.example.android.ui.MarkdownPager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +53,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scroll: ScrollView
     private lateinit var markdown: TextView
     private var currentDocument: MarkdownDocument? = null
+    private var pager: MarkdownPager? = null
+    private var pageIndex: Int = 0
+    private lateinit var pageStatus: TextView
     private var currentHeadingAnchor: String = "top"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -165,11 +169,32 @@ class MainActivity : AppCompatActivity() {
         controls.addView(next)
         controls.addView(rate, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
+        val pageNavigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            tag = "page_navigation"
+        }
+        val previousPage = Button(this).apply {
+            text = "Previous page"
+            setOnClickListener { showPage(pageIndex - 1) }
+        }
+        pageStatus = TextView(this).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+        val nextPage = Button(this).apply {
+            text = "Next page"
+            setOnClickListener { showPage(pageIndex + 1) }
+        }
+        pageNavigation.addView(previousPage)
+        pageNavigation.addView(pageStatus, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        pageNavigation.addView(nextPage)
+
         root.addView(title)
         root.addView(loading)
         root.addView(status)
         root.addView(list)
         root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(pageNavigation)
         root.addView(controls)
         setContentView(root)
 
@@ -232,17 +257,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderDocument(document: MarkdownDocument) {
         currentDocument = document
+        pager = MarkdownPager(document.markdown)
+        pageIndex = pager!!.pageIndexForProgress(document.detail.readingProgress?.progressRatio ?: 0.0)
         list.visibility = View.GONE
         scroll.visibility = View.VISIBLE
+        root.findViewWithTag<LinearLayout>("page_navigation").visibility = View.VISIBLE
         root.findViewWithTag<LinearLayout>("controls").visibility = View.VISIBLE
         status.text = document.detail.title + if (document.fromCache) " (cached)" else ""
-        markdown.text = formatMarkdown(document.markdown)
-        ttsController.setMarkdown(document.markdown)
         val ratio = document.detail.readingProgress?.progressRatio ?: 0.0
+        showPage(pageIndex, syncProgress = false)
         scroll.post {
             val maxScroll = max(0, markdown.height - scroll.height)
-            scroll.scrollTo(0, (maxScroll * ratio).toInt())
+            val pageProgress = (ratio * pager!!.pageCount - pageIndex).coerceIn(0.0, 1.0)
+            scroll.scrollTo(0, (maxScroll * pageProgress).toInt())
         }
+    }
+
+    private fun showPage(requestedIndex: Int, syncProgress: Boolean = true) {
+        val currentPager = pager ?: return
+        pageIndex = requestedIndex.coerceIn(0, currentPager.pageCount - 1)
+        val page = currentPager.page(pageIndex)
+        markdown.text = page
+        pageStatus.text = "${pageIndex + 1} / ${currentPager.pageCount}"
+        ttsController.setMarkdown(page)
+        scroll.scrollTo(0, 0)
+        if (syncProgress) syncScrollProgress()
     }
 
     private fun showList() {
@@ -250,19 +289,24 @@ class MainActivity : AppCompatActivity() {
             syncManager.flush()
         }
         currentDocument = null
+        pager = null
         list.visibility = View.VISIBLE
         scroll.visibility = View.GONE
+        root.findViewWithTag<LinearLayout>("page_navigation").visibility = View.GONE
         root.findViewWithTag<LinearLayout>("controls").visibility = View.GONE
         ttsController.pause()
     }
 
     private fun syncScrollProgress() {
         val document = currentDocument ?: return
+        val currentPager = pager ?: return
         val maxScroll = max(1, markdown.height - scroll.height)
-        val ratio = (scroll.scrollY.toDouble() / maxScroll.toDouble()).coerceIn(0.0, 1.0)
-        val heading = headingAnchorNearOffset(document.markdown, ratio)
+        val pageProgress = (scroll.scrollY.toDouble() / maxScroll.toDouble()).coerceIn(0.0, 1.0)
+        val ratio = currentPager.progress(pageIndex, pageProgress)
+        val page = currentPager.page(pageIndex)
+        val heading = headingAnchorNearOffset(page, pageProgress)
         val type = if (heading != null) PositionType.HeadingAnchor else PositionType.Line
-        val value = heading ?: ((document.markdown.lines().size * ratio).toInt() + 1).toString()
+        val value = heading ?: "page-${pageIndex + 1}"
         currentHeadingAnchor = value
         syncManager.onPositionChanged(
             ProgressUpdate(
@@ -277,7 +321,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun syncSpeechProgress() {
         val document = currentDocument ?: return
-        val ratio = ttsController.currentProgressRatio()
+        val currentPager = pager ?: return
+        val ratio = currentPager.progress(pageIndex, ttsController.currentProgressRatio())
         syncManager.onPositionChanged(
             ProgressUpdate(
                 documentId = document.detail.documentId,
@@ -288,15 +333,6 @@ class MainActivity : AppCompatActivity() {
             ),
         )
     }
-
-    private fun formatMarkdown(value: String): String =
-        value.lines().joinToString("\n") { line ->
-            when {
-                line.startsWith("# ") -> "\n${line.removePrefix("# ").uppercase()}\n"
-                line.startsWith("## ") -> "\n${line.removePrefix("## ")}\n"
-                else -> line
-            }
-        }
 
     private fun headingAnchorNearOffset(markdown: String, ratio: Double): String? {
         val lines = markdown.lines()
