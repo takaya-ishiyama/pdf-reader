@@ -2,6 +2,10 @@ package com.example.android
 
 import android.os.Bundle
 import android.graphics.Typeface
+import android.graphics.Color
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.BackgroundColorSpan
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -66,6 +70,9 @@ class MainActivity : AppCompatActivity() {
         syncManager = ProgressSyncManager(repository, scope)
         speechEngine = AndroidSpeechEngine(this)
         ttsController = TextToSpeechController(speechEngine)
+        ttsController.onHighlightChanged = { range ->
+            runOnUiThread { highlightSpokenSentence(range) }
+        }
         buildLayout()
         bindState()
         viewModel.loadDocuments()
@@ -352,6 +359,29 @@ class MainActivity : AppCompatActivity() {
                 progressRatio = ratio,
             ),
         )
+    }
+
+    private fun highlightSpokenSentence(range: IntRange?) {
+        val page = pager?.page(pageIndex) ?: return
+        if (range == null || range.first !in page.indices || range.last !in page.indices) {
+            markdown.text = page
+            return
+        }
+
+        markdown.text = SpannableString(page).apply {
+            setSpan(
+                BackgroundColorSpan(Color.argb(96, 255, 193, 7)),
+                range.first,
+                range.last + 1,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        markdown.post {
+            val line = markdown.layout?.getLineForOffset(range.first) ?: return@post
+            val targetY = (markdown.layout.getLineTop(line) - scroll.height / 3).coerceAtLeast(0)
+            scroll.smoothScrollTo(0, targetY)
+            syncSpeechProgress()
+        }
     }
 
     private fun headingAnchorNearOffset(markdown: String, ratio: Double): String? {

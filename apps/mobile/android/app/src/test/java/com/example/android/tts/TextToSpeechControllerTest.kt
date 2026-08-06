@@ -39,16 +39,36 @@ class TextToSpeechControllerTest {
         assertEquals(2.0f, controller.speechRate)
         assertTrue(engine.rates.contains(2.0f))
     }
+
+    @Test
+    fun completionAdvancesToNextSentenceAndUpdatesHighlight() {
+        val engine = FakeSpeechEngine()
+        val controller = TextToSpeechController(engine)
+        val highlights = mutableListOf<IntRange?>()
+        controller.onHighlightChanged = highlights::add
+        controller.setMarkdown("First sentence. Second sentence。")
+
+        controller.play()
+        engine.completeCurrentSentence()
+
+        assertEquals(listOf("First sentence.", "Second sentence。"), engine.spoken)
+        assertEquals(16..31, highlights.last())
+        assertEquals(SpeechState.Playing(1), controller.state)
+    }
 }
 
 private class FakeSpeechEngine : SpeechEngine {
     val spoken = mutableListOf<String>()
     val rates = mutableListOf<Float>()
     var stopped = false
+    private var onDone: (() -> Unit)? = null
 
-    override fun speak(text: String) {
+    override fun speak(text: String, onDone: () -> Unit) {
         spoken += text
+        this.onDone = onDone
     }
+
+    fun completeCurrentSentence() = onDone?.invoke()
 
     override fun stop() {
         stopped = true
